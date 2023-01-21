@@ -17,6 +17,7 @@ import androidx.compose.material.icons.sharp.Lens
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.layout.onGloballyPositioned
@@ -47,7 +48,30 @@ fun CameraPreview(
     var fps by remember { mutableStateOf(0) }
     var fpsCounter by remember { mutableStateOf(0) }
 
+
+
+//prevent launchedEffect when app is in background
+
+
+
+
+    // 1
+    var previewSize by remember { mutableStateOf(IntSize.Zero) }
+
+    val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
+
+
+    //create mutable state that holds  mapOutputCoordinates
+
+    val previewState by previewViewModel.previewState.collectAsState()
+    val previewView = remember { PreviewView(context) }
+//    val imageCapture: ImageCapture = remember { ImageCapture.Builder().build() }
+
     LaunchedEffect(Unit) {
+        //exit when app is in background
+
+
         while (true) {
             fps = fpsCounter
 
@@ -57,22 +81,6 @@ fun CameraPreview(
         }
     }
 
-
-    // 1
-    var previewSize by remember { mutableStateOf(IntSize.Zero) }
-
-    val context = LocalContext.current
-    val lifecycleOwner = LocalLifecycleOwner.current
-
-    //create mutable state that holds  mapOutputCoordinates
-
-    val previewState by previewViewModel.previewState.collectAsState()
-    val previewView = remember { PreviewView(context) }
-//    val imageCapture: ImageCapture = remember { ImageCapture.Builder().build() }
-
-    val cameraSelector = CameraSelector.Builder()
-        .requireLensFacing(previewState.cameraState.lensFacing)
-        .build()
 
     //TODO
     // should i use derivedStateOf and calculate  mapOutputCoordinates from composable state?
@@ -86,12 +94,16 @@ fun CameraPreview(
         val preview = Preview.Builder().build()
 
         val imageAnalysis: ImageAnalysis = ImageAnalysis.Builder()
-            .setTargetAspectRatio(AspectRatio.RATIO_4_3)
-            //.setTargetRotation(view_finder.display.rotation)
+            .setTargetAspectRatio(previewState.aspectRatio)
+            .setTargetRotation(previewView.display.rotation) //todo move previewView to state
             .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
             .build()
 
         imageAnalysis.setAnalyzer(executor, analyzer)
+
+        val cameraSelector = CameraSelector.Builder()
+            .requireLensFacing(previewState.cameraState.lensFacing)
+            .build()
 
         val cameraProvider = context.getCameraProvider()
         cameraProvider.unbindAll()
@@ -101,6 +113,7 @@ fun CameraPreview(
             preview,
             imageAnalysis
         )
+
 
         preview.setSurfaceProvider(previewView.surfaceProvider)
     }
@@ -116,19 +129,22 @@ fun CameraPreview(
             })
 
 
+
         previewState.calculatedDetectionLocations.forEach { detection ->
             LogCompositions("DetectionBox",detection.toString())
             LogCompositions(tag = "PreviewSize",previewSize.toString())
+
             fpsCounter++
             Box(
                 modifier = Modifier
-                    .size(detection.width, detection.height)
-                    .border(2.dp, detection.color, RectangleShape)
-                    .align(Alignment.TopStart)
                     .offset(
                         x = detection.leftMargin,
                         y = detection.topMargin
                     )
+                    .align(Alignment.TopStart)
+                    .size(detection.width, detection.height)
+                    .border(2.dp, detection.color, RectangleShape)
+
                     .zIndex(5f)
             ) {
                 //draw text label and score

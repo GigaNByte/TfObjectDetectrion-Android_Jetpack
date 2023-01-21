@@ -3,12 +3,16 @@ package com.giganbyte.jetpackcomposetfobjectdetection
 import android.graphics.Rect
 import android.graphics.RectF
 import android.util.Log
+import androidx.camera.core.AspectRatio
 import androidx.camera.core.CameraSelector
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModel
+
+import com.giganbyte.jetpackcomposetfobjectdetection.MetricsUtil.convertPixelsToDp
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -42,15 +46,17 @@ class PreviewViewModel : ViewModel(){
                     blue = (Math.random() * 255).toInt()
                 )
                 Log.d("LOKATION", (location.right.toInt() - location.left.toInt()).toString())
+
                 DetectionLocation(
                     color = color,
                     location = location,
 
+
                     //convert and save topMargin to dp for composable
-                    topMargin = location.top.toFloat().dp,
-                    leftMargin = location.left.toFloat().dp,
-                    width = min(_previewState.value.previewSize.width, location.right.toInt() - location.left.toInt()).toFloat().dp,// seems like location.bottom.toInt() - location.top.toInt() is always larger than previewSize.width
-                    height = min(_previewState.value.previewSize.height, location.bottom.toInt() - location.top.toInt()).toFloat().dp,
+                    topMargin = convertPixelsToDp(location.top,null).dp,
+                    leftMargin = convertPixelsToDp(location.left,null).dp,
+                    width = convertPixelsToDp(min(_previewState.value.previewSize.width.toFloat(), location.right - location.left),null).dp,// seems like location.bottom.toInt() - location.top.toInt() is always larger than previewSize.width
+                    height = convertPixelsToDp(min(_previewState.value.previewSize.height.toFloat(), location.bottom - location.top),null).dp,
                     label = detection.label,
                     score = detection.score
                 )
@@ -70,11 +76,11 @@ class PreviewViewModel : ViewModel(){
         // Step 1: map location to the preview coordinates
         val previewSize = _previewState.value.previewSize
 
-        val previewLocation = Rect(
-            (location.left * previewSize.width).toInt(),
-            (location.top * previewSize.height).toInt(),
-            (location.right * previewSize.width).toInt(),
-            (location.bottom * previewSize.height).toInt()
+        val previewLocation = RectF(
+            (location.left * previewSize.width),
+            (location.top * previewSize.height),
+            (location.right * previewSize.width),
+            (location.bottom * previewSize.height)
         )
 
         // Step 2: compensate for camera sensor orientation and mirroring
@@ -83,7 +89,7 @@ class PreviewViewModel : ViewModel(){
         val rotatedLocation = if (
             (!isFrontFacing && isFlippedOrientation) ||
             (isFrontFacing && !isFlippedOrientation)) {
-            Rect(
+            RectF(
                 previewSize.width - previewLocation.right,
                 previewSize.height - previewLocation.bottom,
                 previewSize.width - previewLocation.left,
@@ -119,6 +125,7 @@ class PreviewViewModel : ViewModel(){
 data class PreviewState(
     val confidence: Float = 0.5f,
     val previewSize: IntSize = IntSize(0, 0),  //  1080 x 2138
+    val aspectRatio: Int = AspectRatio.RATIO_4_3,
     val detections: List<ObjectDetectionHelper.ObjectPrediction> = emptyList(),
     val calculatedDetectionLocations : List<DetectionLocation> = emptyList(),
     val cameraState: CameraState = CameraState()
