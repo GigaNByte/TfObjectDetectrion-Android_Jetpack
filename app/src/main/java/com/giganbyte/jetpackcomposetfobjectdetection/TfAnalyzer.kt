@@ -22,7 +22,9 @@ import androidx.camera.core.ImageProxy
 import org.tensorflow.lite.support.image.TensorImage
 
 
-class TfAnalyzer(context: Context, private val updateDetections: (List<ObjectDetectionHelper.ObjectPrediction>) -> Unit ) : ImageAnalysis.Analyzer {
+class TfAnalyzer(context: Context,model: Model , private val updateDetections: (List<ObjectDetectionHelper.ObjectPrediction>) -> Unit ,private val updateModelResolution: (Resolution) -> Unit) : ImageAnalysis.Analyzer {
+
+    private val modalBottomViewModel = ModalBottomViewModel()
     private lateinit var bitmapBuffer: Bitmap
     private var imageRotationDegrees: Int = 0
     private var pauseAnalysis = false //WARN this should be mutable in composable
@@ -40,24 +42,29 @@ class TfAnalyzer(context: Context, private val updateDetections: (List<ObjectDet
 
     private val tflite by lazy {
          Interpreter(
-             FileUtil.loadMappedFile(context, MODEL_PATH),
+             FileUtil.loadMappedFile(context, model.path),
              Interpreter.Options().addDelegate(NnApiDelegate()))
     }
 
     private val detector by lazy {
-         ObjectDetectionHelper(tflite, FileUtil.loadLabels(context, LABELS_PATH))
+         ObjectDetectionHelper(tflite, FileUtil.loadLabels(context, model.labelsPath))
     }
 
      private val tfInputSize by lazy {
          val inputIndex = 0
          val inputShape = tflite.getInputTensor(inputIndex).shape()
+
+       updateModelResolution(Resolution(inputShape[2], inputShape[1]))
          Size(inputShape[2], inputShape[1]) // Order of axis is: {1, height, width, 3}
      }
-    //use diferent YuvToRgbConverter for different android versions
 
+    //use diferent YuvToRgbConverter for different android versions
      private val converter = YuvToRgbConverter(context)
      private var frameCounter = 0
      private var lastFpsTimestamp = System.currentTimeMillis()
+
+
+
 
     @ExperimentalGetImage
     override fun analyze(image: ImageProxy) {
@@ -104,8 +111,5 @@ class TfAnalyzer(context: Context, private val updateDetections: (List<ObjectDet
 
     companion object {
         private val TAG = TfAnalyzer::class.java.simpleName
-        private const val ACCURACY_THRESHOLD = 0.5f
-        private const val MODEL_PATH = "coco_ssd_mobilenet_v1_1.0_quant.tflite"
-        private const val LABELS_PATH = "coco_ssd_mobilenet_v1_1.0_labels.txt"
     }
 }

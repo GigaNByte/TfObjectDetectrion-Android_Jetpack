@@ -1,18 +1,21 @@
 package com.giganbyte.jetpackcomposetfobjectdetection
 
-import android.graphics.Rect
+import android.content.Context
 import android.graphics.RectF
 import android.util.Log
 import androidx.camera.core.AspectRatio
 import androidx.camera.core.CameraSelector
+import androidx.camera.core.ImageAnalysis
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.MutableLiveData
 import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
 
 import com.giganbyte.jetpackcomposetfobjectdetection.MetricsUtil.convertPixelsToDp
+import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -21,10 +24,13 @@ import kotlin.math.min
 
 class PreviewViewModel : ViewModel(){
 
-    // i still dont understand how it works (Backing properties) but it works
-    private val _previewState = MutableStateFlow(PreviewState())
-    val previewState: StateFlow<PreviewState> = _previewState.asStateFlow()
 
+    private val _previewState = MutableStateFlow(PreviewState())
+    private val modalBottomViewModel = ModalBottomViewModel() // TODO : i still think that i should rethink separation of view models
+
+    val previewState: StateFlow<PreviewState> = _previewState.asStateFlow()
+    var fpsCounterJob: Job? = null
+    var fpsCounter = MutableLiveData(0)
 
     fun updateDetections(detections: List<ObjectDetectionHelper.ObjectPrediction>) {
 
@@ -64,11 +70,50 @@ class PreviewViewModel : ViewModel(){
         }
 
     }
+    fun startFpsCounter() {
+        fpsCounterJob = viewModelScope.launch {
+            while (isActive) {
+
+                //update _previewState.value.fps with fpsCounter.value
+                _previewState.update {
+                    it.copy(fps = fpsCounter.value ?: 0)
+                }
+
+                Log.d("OBJECTS PS", _previewState.value.fps.toString())
+                fpsCounter.postValue(0)
+                delay(1000)
+            }
+        }
+    }
+
+    fun incrementFpsCounter() {
+        fpsCounter.postValue(fpsCounter.value?.plus(1))
+    }
+    fun stopFpsCounter() {
+        fpsCounter.postValue(0)
+        _previewState.update {
+            it.copy(fps = 0)
+        }
+        fpsCounterJob?.cancel()
+    }
+    override fun onCleared() {
+        super.onCleared()
+        fpsCounterJob?.cancel()
+    }
 
     fun updatePreviewSize(size: IntSize) {
         _previewState.update {
             it.copy(previewSize = size)
         }
+    }
+    fun updateResolution(resolution: Resolution) {
+        _previewState.update {
+            it.copy(modelResolution = resolution)
+        }
+    }
+    fun TfAnalyzerBuilder(context: Context,model: Model): ImageAnalysis.Analyzer {
+        val  tfAnalizer =  TfAnalyzer(context,model, ::updateDetections,::updateResolution   )
+        return tfAnalizer
     }
 
     private fun mapOutputCoordinates(location: RectF): RectF {
@@ -84,11 +129,11 @@ class PreviewViewModel : ViewModel(){
         )
 
         // Step 2: compensate for camera sensor orientation and mirroring
-        val isFrontFacing = _previewState.value.cameraState.lensFacing == CameraSelector.LENS_FACING_FRONT
+        val isBackFacing = _previewState.value.cameraState.lensFacing == CameraSelector.LENS_FACING_BACK
         val isFlippedOrientation = _previewState.value.cameraState.imageRotationDegrees  == 90 || _previewState.value.cameraState.imageRotationDegrees == 270
         val rotatedLocation = if (
-            (!isFrontFacing && isFlippedOrientation) ||
-            (isFrontFacing && !isFlippedOrientation)) {
+            (!isBackFacing && isFlippedOrientation) ||
+            (isBackFacing && !isFlippedOrientation)) {
             RectF(
                 previewSize.width - previewLocation.right,
                 previewSize.height - previewLocation.bottom,
@@ -101,7 +146,7 @@ class PreviewViewModel : ViewModel(){
 
         // Step 3: compensate for 1:1 to 4:3 aspect ratio conversion + small margin
         val margin = 0.1f
-        val requestedRatio = 4f / 3f
+        val requestedRatio = previewState.value.aspectRatioF
         val midX = (rotatedLocation.left + rotatedLocation.right) / 2f
         val midY = (rotatedLocation.top + rotatedLocation.bottom) / 2f
         return if (previewSize.width < previewSize.height) {
@@ -123,13 +168,17 @@ class PreviewViewModel : ViewModel(){
 }
 
 data class PreviewState(
+    val fps : Int = 0, //fps
     val confidence: Float = 0.5f,
     val previewSize: IntSize = IntSize(0, 0),  //  1080 x 2138
-    val aspectRatio: Int = AspectRatio.RATIO_4_3,
+    val aspectRatio: Int = 1,
+    val aspectRatioF: Float = 1f / 1f,
     val detections: List<ObjectDetectionHelper.ObjectPrediction> = emptyList(),
     val calculatedDetectionLocations : List<DetectionLocation> = emptyList(),
-    val cameraState: CameraState = CameraState()
+    val cameraState: CameraState = CameraState(),
+    val modelResolution: Resolution = Resolution(0,0)
 )
+
 
 data class DetectionLocation(
 
@@ -143,6 +192,9 @@ data class DetectionLocation(
     val label: String,
     val score: Float
 )
+
+
+
 
 data class CameraState(
     val lensFacing: Int = CameraSelector.LENS_FACING_BACK,
