@@ -1,8 +1,10 @@
 package com.giganbyte.jetpackcomposetfobjectdetection
 
 
+import android.content.ContentValues
 import android.content.Context
 import android.graphics.Bitmap
+import android.provider.MediaStore
 import android.util.Log
 import android.util.Size
 import androidx.camera.core.ExperimentalGetImage
@@ -20,18 +22,23 @@ import org.tensorflow.lite.support.common.ops.NormalizeOp
 
 import androidx.camera.core.ImageProxy
 import org.tensorflow.lite.support.image.TensorImage
+import java.io.File
+import java.io.FileOutputStream
 
 
 class TfAnalyzer(context: Context,model: Model , private val updateDetections: (List<ObjectDetectionHelper.ObjectPrediction>) -> Unit ,private val updateModelResolution: (Resolution) -> Unit) : ImageAnalysis.Analyzer {
 
     private val modalBottomViewModel = ModalBottomViewModel()
     private lateinit var bitmapBuffer: Bitmap
+    private var fileCounter :Int =  0
+    private val context = context
     private var imageRotationDegrees: Int = 0
     private var pauseAnalysis = false //WARN this should be mutable in composable
     private val tfImageBuffer = TensorImage(DataType.UINT8)
     private val tfImageProcessor by lazy { // Lazy so that we only initialize it when we need it
          val cropSize = minOf(bitmapBuffer.width, bitmapBuffer.height)// what is the size of the image we want to crop to
-         ImageProcessor.Builder() //tensorflow image processor
+        //log tfInputSize.height, tfInputSize.width
+        ImageProcessor.Builder() //tensorflow image processor
              .add(ResizeWithCropOrPadOp(cropSize, cropSize))
              .add(ResizeOp(
                  tfInputSize.height, tfInputSize.width, ResizeOp.ResizeMethod.NEAREST_NEIGHBOR))
@@ -86,6 +93,28 @@ class TfAnalyzer(context: Context,model: Model , private val updateDetections: (
 
         // Process the image in Tensorflow
         val tfImage =  tfImageProcessor.process(tfImageBuffer.apply { load(bitmapBuffer) })
+/*
+        //save first image to file
+        if (fileCounter %10 == 0) {
+            Log.d("TFLITE_TEST", "Saving image to file")
+
+            val bitmap = tfImage.bitmap
+            val values = ContentValues().apply {
+                put(MediaStore.Images.Media.DISPLAY_NAME, "TFLITE_TEST_image.jpg")
+                put(MediaStore.Images.Media.MIME_TYPE, "image/jpeg")
+                put(MediaStore.Images.Media.RELATIVE_PATH, "DCIM/TFLITE_TEST")
+            }
+            val contentUri = context.contentResolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values)
+            val outputStream = contentUri?.let { context.contentResolver.openOutputStream(it) }
+            bitmap.compress(Bitmap.CompressFormat.JPEG, 100, outputStream)
+            outputStream?.close()
+            fileCounter++
+
+
+        }
+
+        fileCounter++;
+*/
 
         // Perform the object detection for the current frame
         val predictions = detector.predict(tfImage)

@@ -28,7 +28,9 @@ import java.util.concurrent.Executor
 import kotlin.coroutines.resume
 import kotlin.coroutines.suspendCoroutine
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.giganbyte.jetpackcomposetfobjectdetection.MetricsUtil.convertDpToPixel
 import com.giganbyte.jetpackcomposetfobjectdetection.MetricsUtil.convertPixelsToDp
+import kotlin.math.abs
 
 @SuppressLint("WrongConstant")
 @Composable
@@ -53,8 +55,17 @@ fun CameraPreview(
 
     val previewState by previewViewModel.previewState.collectAsState()
     val modelState by modalViewModel.modalState.collectAsState()
+//change PreviewView crop method
+    val previewView = remember {
+        PreviewView(context).apply {
+            cropToPreview = false
+            setOnTouchListener { _, _ ->
+                previewViewModel.onPreviewTapped()
+                true
+            }
+        }
+    }
 
-    val previewView = remember { PreviewView(context) }
 
 
     //retrieve current lifecycle event to react to it later in composable
@@ -84,6 +95,7 @@ fun CameraPreview(
     // we need to prevent situation when previewSize was not updated yet if we already have previewState
     // for now i think we can stop rendering when previewSize is zero
     LaunchedEffect(previewSize) {
+        //convert to px
         previewViewModel.updatePreviewSize(previewSize)
     }
 
@@ -110,6 +122,7 @@ fun CameraPreview(
             preview,
             imageAnalysis
         )
+
 
 
         preview.setSurfaceProvider(previewView.surfaceProvider)
@@ -164,7 +177,10 @@ fun CameraPreview(
                             .align(Alignment.TopStart)
                             .size(detection.width, detection.height)
                             .border(2.dp, detection.color, RectangleShape)
-                            .aspectRatio(detection.width / detection.height)
+
+                            //if statement to check if not zero to prevent division by zero
+                            .aspectRatio(if (detection.width.value != 0f) abs(detection.width.value / detection.height.value) else 1f)
+
                             .zIndex(5f)
 
 

@@ -20,6 +20,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import kotlin.math.abs
 import kotlin.math.min
 
 class PreviewViewModel : ViewModel(){
@@ -51,17 +52,15 @@ class PreviewViewModel : ViewModel(){
                     green = (Math.random() * 255).toInt(),
                     blue = (Math.random() * 255).toInt()
                 )
-                Log.d("LOKATION", (location.right.toInt() - location.left.toInt()).toString())
 
                 DetectionLocation(
                     color = color,
                     location = location,
 
-
                     //convert and save topMargin to dp for composable
                     topMargin = convertPixelsToDp(location.top,null).dp,
-                    leftMargin = convertPixelsToDp(location.left,null).dp,
-                    width = convertPixelsToDp(min(_previewState.value.previewSize.width.toFloat(), location.right - location.left),null).dp,// seems like location.bottom.toInt() - location.top.toInt() is always larger than previewSize.width
+                    leftMargin = convertPixelsToDp(location.left, null).dp,
+                    width = convertPixelsToDp(min(_previewState.value.previewSize.width.toFloat(), location.right - location.left),null).dp,
                     height = convertPixelsToDp(min(_previewState.value.previewSize.height.toFloat(), location.bottom - location.top),null).dp,
                     label = detection.label,
                     score = detection.score
@@ -120,20 +119,50 @@ class PreviewViewModel : ViewModel(){
 
         // Step 1: map location to the preview coordinates
         val previewSize = _previewState.value.previewSize
+        val scaleX =  0.64f
+        val scaleY = 0.64f
 
-        val previewLocation = RectF(
-            (location.left * previewSize.width),
-            (location.top * previewSize.height),
-            (location.right * previewSize.width),
-            (location.bottom * previewSize.height)
+        //depending how far location on X axis is from center (0), we need to lover it proprotionally by offsetX
+        // ex : if location.left is 0.5f from center, we need to lower  by offsetX = 0.18f
+        // if location.left is -0.5f from center, we need to add it  by offsetX = 0.18f
+
+        val maxoffsetRatio = 0.16f
+
+
+        val notscaledpreviewLocation = RectF(
+            (location.left * previewSize.width ) ,
+            (location.top * previewSize.height ) ,
+            (location.right  * previewSize.width  ),
+            (location.bottom * previewSize.height  )
         )
 
-        // Step 2: compensate for camera sensor orientation and mirroring
+        //location.centerX() (range from 0-1) normalize value to be in range [-1,1]
+        var offsetX =  1-((location.centerX() - 0.5f) * 2 ) * maxoffsetRatio
+        //log xScale
+        Log.d("XSCALE", offsetX.toString())
+//apply xScale  to previewLocation
+   //     offsetX = 1f
+        offsetX = 1f
+        val previewLocation = RectF(
+            ((location.left * offsetX) * previewSize.width ) ,
+            (location.top * previewSize.height ) ,
+            ((location.right * offsetX)  * previewSize.width  ) ,
+            (location.bottom * previewSize.height  )
+        )
+        val tas = location.centerX()
+
+
+       Log.d("HANOVEX", "sad: $tas.toString()")
+
+
+
         val isBackFacing = _previewState.value.cameraState.lensFacing == CameraSelector.LENS_FACING_BACK
         val isFlippedOrientation = _previewState.value.cameraState.imageRotationDegrees  == 90 || _previewState.value.cameraState.imageRotationDegrees == 270
         val rotatedLocation = if (
             (!isBackFacing && isFlippedOrientation) ||
             (isBackFacing && !isFlippedOrientation)) {
+            //log the rotation
+
             RectF(
                 previewSize.width - previewLocation.right,
                 previewSize.height - previewLocation.bottom,
@@ -144,14 +173,27 @@ class PreviewViewModel : ViewModel(){
             previewLocation
         }
 
-        // Step 3: compensate for 1:1 to 4:3 aspect ratio conversion + small margin
+
         val margin = 0.1f
-        val requestedRatio = previewState.value.aspectRatioF
+        val requestedRatio = 1f
         val midX = (rotatedLocation.left + rotatedLocation.right) / 2f
         val midY = (rotatedLocation.top + rotatedLocation.bottom) / 2f
+
+
+
+        val  giga = RectF(
+            (midX - (1f + margin) * requestedRatio * rotatedLocation.width()  / 2f) ,
+            (midY - (1f - margin) * rotatedLocation.height() / 2f),
+            (midX + (1f + margin) * requestedRatio * rotatedLocation.width() / 2f),
+            (midY + (1f - margin) * rotatedLocation.height() / 2f)
+        )
+
+        //calculate how far from center giga Rectf is and normalize it to be in range [0,1]
+
+
         return if (previewSize.width < previewSize.height) {
             RectF(
-                (midX - (1f + margin) * requestedRatio * rotatedLocation.width() / 2f),
+                (midX - (1f + margin) * requestedRatio * rotatedLocation.width()  / 2f) ,
                 (midY - (1f - margin) * rotatedLocation.height() / 2f),
                 (midX + (1f + margin) * requestedRatio * rotatedLocation.width() / 2f),
                 (midY + (1f - margin) * rotatedLocation.height() / 2f)
@@ -159,20 +201,23 @@ class PreviewViewModel : ViewModel(){
         } else {
             RectF(
                 (midX - (1f - margin) * rotatedLocation.width() / 2f),
-                (midY - (1f + margin) * requestedRatio * rotatedLocation.height() / 2f),
-                (midX + (1f - margin) * rotatedLocation.width() / 2f),
+                (midY - (1f + margin) * requestedRatio * rotatedLocation.height() / 2f) ,
+                (midX + (1f - margin) * rotatedLocation.width() / 2f) ,
                 (midY + (1f + margin) * requestedRatio * rotatedLocation.height() / 2f)
             )
         }
     }
-}
 
+
+
+
+}
 data class PreviewState(
     val fps : Int = 0, //fps
     val confidence: Float = 0.5f,
-    val previewSize: IntSize = IntSize(0, 0),  //  1080 x 2138
+    val previewSize: IntSize = IntSize(1080, 1080),  //  1080 x 1080
     val aspectRatio: Int = 1,
-    val aspectRatioF: Float = 1f / 1f,
+    val aspectRatioF: Float = 1f ,
     val detections: List<ObjectDetectionHelper.ObjectPrediction> = emptyList(),
     val calculatedDetectionLocations : List<DetectionLocation> = emptyList(),
     val cameraState: CameraState = CameraState(),

@@ -3,6 +3,7 @@ package com.giganbyte.jetpackcomposetfobjectdetection
 import android.content.Context
 import android.content.res.Resources
 import android.util.DisplayMetrics
+import android.util.Log
 
 /**
  * Provides utilities for metrics.
@@ -40,6 +41,7 @@ object MetricsUtil {
      * @return A float value to represent dp equivalent to px value
      */
     fun convertPixelsToDp(px: Float, context: Context?): Float {
+
         return if (context != null) {
             val resources = context.resources
             val metrics = resources.displayMetrics
@@ -48,5 +50,6 @@ object MetricsUtil {
             val metrics = Resources.getSystem().displayMetrics
             px / (metrics.densityDpi.toFloat() / DisplayMetrics.DENSITY_DEFAULT)
         }
+
     }
 }
