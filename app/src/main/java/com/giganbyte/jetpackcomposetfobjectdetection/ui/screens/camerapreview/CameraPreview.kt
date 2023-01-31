@@ -1,12 +1,14 @@
 package com.giganbyte.jetpackcomposetfobjectdetection
 
-import android.annotation.SuppressLint
 import android.content.Context
-import android.util.Log
+import android.hardware.camera2.CaptureRequest
+import android.util.Range
+import android.util.Size
+import androidx.camera.camera2.interop.Camera2Interop
 import androidx.camera.core.*
 import androidx.camera.lifecycle.ProcessCameraProvider
-import androidx.compose.foundation.border
 import androidx.camera.view.PreviewView
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.Text
 import androidx.compose.runtime.*
@@ -24,72 +26,63 @@ import androidx.compose.ui.zIndex
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.viewmodel.compose.viewModel
+import com.giganbyte.jetpackcomposetfobjectdetection.ui.utils.MetricsUtil.convertPixelsToDp
 import java.util.concurrent.Executor
 import kotlin.coroutines.resume
 import kotlin.coroutines.suspendCoroutine
-import androidx.lifecycle.viewmodel.compose.viewModel
-import com.giganbyte.jetpackcomposetfobjectdetection.MetricsUtil.convertDpToPixel
-import com.giganbyte.jetpackcomposetfobjectdetection.MetricsUtil.convertPixelsToDp
-import kotlin.math.abs
+import kotlin.math.round
 
-@SuppressLint("WrongConstant")
+@androidx.camera.camera2.interop.ExperimentalCamera2Interop
 @Composable
 fun CameraPreview(
+    appContext: Context,
     executor: Executor,
-    previewViewModel: PreviewViewModel = viewModel(),
-    modalViewModel: ModalBottomViewModel = viewModel(),
-
+    modalViewModel: BottomSheetScaffoldViewModel = viewModel(),
 ) {
 
+    val modelStatsViewModel: ModelStatsViewModel = remember { ModelStatsViewModel(appContext) }
+    val previewViewModel: PreviewViewModel = remember { PreviewViewModel(modelStatsViewModel) }
+
     var previewSize by remember { mutableStateOf(IntSize.Zero) }
-    var previewSizeHeight  by remember { mutableStateOf(0.dp) }
+    var previewSizeHeight by remember { mutableStateOf(0.dp) }
+    var previewSizeWidth by remember { mutableStateOf(0.dp) }
 
-    var previewSizeWidth  by remember { mutableStateOf(0.dp) }
-
-    val context = LocalContext.current //TODO: check if this is correct context for camera preview in activity i used activity context for camera executor
+    val context =
+        LocalContext.current //TODO: check if this is correct context (or appContext(activity context) ) for camera preview in activity i used activity context for camera executor
     val lifecycleOwner = LocalLifecycleOwner.current
     val lifecycle = LocalLifecycleOwner.current.lifecycle
 
     val latestLifecycleEvent = remember { mutableStateOf(Lifecycle.Event.ON_ANY) }
     val isLifecycleOnResume = remember { mutableStateOf(false) }
 
+
     val previewState by previewViewModel.previewState.collectAsState()
-    val modelState by modalViewModel.modalState.collectAsState()
-//change PreviewView crop method
-    val previewView = remember {
-        PreviewView(context).apply {
-            cropToPreview = false
-            setOnTouchListener { _, _ ->
-                previewViewModel.onPreviewTapped()
-                true
-            }
-        }
-    }
+    val modelState by modalViewModel.scaffoldState.collectAsState()
 
-
+    val previewView = remember { PreviewView(context) }
 
     //retrieve current lifecycle event to react to it later in composable
-    DisposableEffect(lifecycle ){
+    DisposableEffect(lifecycle) {
         val observer = LifecycleEventObserver { _, event ->
             latestLifecycleEvent.value = event
-            //on resume run startFpsCounter() coroutine from PreviewViewModel
             if (event == Lifecycle.Event.ON_RESUME) {
                 isLifecycleOnResume.value = true
-                previewViewModel.startFpsCounter()
+                if (!modelStatsViewModel.isJobRunning()) {
+                    modelStatsViewModel.startUpdateStatsJob()
+                }
+                //TODO CLASS2: How to move this DisposableEffect into state? Its not safe to rely on client of state to clean started job
             }
-            //on pause stop coroutine
             if (event == Lifecycle.Event.ON_PAUSE) {
                 isLifecycleOnResume.value = false
-                previewViewModel.stopFpsCounter()
+                modelStatsViewModel.stopFpsCounter()
             }
-
         }
         lifecycle.addObserver(observer)
         onDispose {
             lifecycle.removeObserver(observer)
         }
     }
-
 
     // should i use derivedStateOf and calculate  mapOutputCoordinates from composable state?
     // we need to prevent situation when previewSize was not updated yet if we already have previewState
@@ -99,16 +92,35 @@ fun CameraPreview(
         previewViewModel.updatePreviewSize(previewSize)
     }
 
-    LaunchedEffect(previewState.cameraState.lensFacing, modelState.currentModel) {
-        val preview = Preview.Builder().build()
+    LaunchedEffect(previewState.cameraState, modelState.currentModel) {
+        modelStatsViewModel.stopUpdateStatsJob()
 
-        val imageAnalysis: ImageAnalysis = ImageAnalysis.Builder()
-            .setTargetAspectRatio(previewState.aspectRatio)
-            .setTargetRotation(previewView.display.rotation)
-            .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+        //https://stackoverflow.com/questions/57254960/setting-target-resolution-for-camerax-not-working-as-in-documentation
+        val preview = Preview.Builder()
+            .setTargetResolution(Size(480, 640))
             .build()
 
-        imageAnalysis.setAnalyzer(executor, previewViewModel.TfAnalyzerBuilder(context,modelState.currentModel))
+        val builder = ImageAnalysis.Builder()
+            .setTargetResolution(Size(480, 640))
+            .setTargetRotation(previewState.cameraState.rotation)
+            .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+
+        val ext: Camera2Interop.Extender<*> = Camera2Interop.Extender(builder)
+
+        // CONTROL_AE_TARGET_FPS_RANGE should be as range but to maximize model performance tests we set as fixed range
+        ext.setCaptureRequestOption(
+            CaptureRequest.CONTROL_AE_TARGET_FPS_RANGE,
+            Range<Int>(
+                previewState.cameraState.maxCameraFramerate,
+                previewState.cameraState.maxCameraFramerate
+            )
+        )
+        val imageAnalysis = builder.build()
+
+        imageAnalysis.setAnalyzer(
+            executor,
+            previewViewModel.TfAnalyzerBuilder(context, modelState.currentModel)
+        )
 
         val cameraSelector = CameraSelector.Builder()
             .requireLensFacing(previewState.cameraState.lensFacing)
@@ -122,20 +134,20 @@ fun CameraPreview(
             preview,
             imageAnalysis
         )
-
-
-
         preview.setSurfaceProvider(previewView.surfaceProvider)
+        modelStatsViewModel.startUpdateStatsJob()
     }
 
-    ModalBottomLayout {
+    BottomSheetScaffold(
+        modalViewModel = modalViewModel,
+        modelStatsViewModel = modelStatsViewModel,
+        previewViewModel = previewViewModel,
+    ) {
         Box(
 
             contentAlignment = Alignment.BottomCenter,
             modifier = Modifier.fillMaxSize()
         ) {
-
-
             AndroidView({ previewView }, modifier = Modifier
                 .align(Alignment.TopStart)
                 .fillMaxWidth()
@@ -148,7 +160,7 @@ fun CameraPreview(
                         previewSizeWidth = convertPixelsToDp(size.width.toFloat(), context).dp
                     }
 
-            })
+                })
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -163,11 +175,11 @@ fun CameraPreview(
             )
 
             {
-                previewState.calculatedDetectionLocations.forEach { detection ->
-                    LogCompositions("DetectionBox", detection.toString())
-                    LogCompositions(tag = "PreviewSize", previewSize.toString())
 
-                    previewViewModel.incrementFpsCounter()
+                modelStatsViewModel.incrementUpdatedUiFramesCounter()
+
+                previewState.calculatedDetectionLocations.forEach { detection ->
+
                     Box(
                         modifier = Modifier
                             .offset(
@@ -177,19 +189,14 @@ fun CameraPreview(
                             .align(Alignment.TopStart)
                             .size(detection.width, detection.height)
                             .border(2.dp, detection.color, RectangleShape)
-
-                            //if statement to check if not zero to prevent division by zero
-                            .aspectRatio(if (detection.width.value != 0f) abs(detection.width.value / detection.height.value) else 1f)
-
                             .zIndex(5f)
-
-
                     ) {
-                        //draw text label and score
                         Text(
-                            text = "${detection.label} ${detection.score}",
+                            text = "${detection.label}  ${round(detection.score * 100)}%",
                             color = Color.White,
-                            modifier = Modifier.align(Alignment.Center)
+                            modifier = Modifier
+                                .align(Alignment.Center)
+                                .border(2.dp, detection.color, RectangleShape)
                         )
                     }
                 }
@@ -197,30 +204,16 @@ fun CameraPreview(
         }
 
     }
-
-
-
 }
 
-class Ref(var value: Int)
-
-@Composable
-inline fun LogCompositions(tag: String, msg: String) {
-    if (BuildConfig.DEBUG) {
-        val ref = remember { Ref(0) }
-        SideEffect { ref.value++ }
-        Log.d(tag, "Compositions: $msg ${ref.value}")
+private suspend fun Context.getCameraProvider(): ProcessCameraProvider =
+    suspendCoroutine { continuation ->
+        ProcessCameraProvider.getInstance(this).also { cameraProvider ->
+            cameraProvider.addListener({
+                continuation.resume(cameraProvider.get())
+            }, ContextCompat.getMainExecutor(this))
+        }
     }
-}
-
-
-private suspend fun Context.getCameraProvider(): ProcessCameraProvider = suspendCoroutine { continuation ->
-    ProcessCameraProvider.getInstance(this).also { cameraProvider ->
-        cameraProvider.addListener({
-            continuation.resume(cameraProvider.get())
-        }, ContextCompat.getMainExecutor(this))
-    }
-}
 
 
 

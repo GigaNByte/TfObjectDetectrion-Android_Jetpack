@@ -1,4 +1,4 @@
-package com.giganbyte.jetpackcomposetfobjectdetection
+package com.giganbyte.jetpackcomposetfobjectdetection.ui.utils
 
 import android.content.Context
 import android.content.res.Resources

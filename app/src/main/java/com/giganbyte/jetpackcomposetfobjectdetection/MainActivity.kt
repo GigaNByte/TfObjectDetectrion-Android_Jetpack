@@ -1,6 +1,7 @@
 package com.giganbyte.jetpackcomposetfobjectdetection
 
 import android.Manifest
+import android.content.Context
 import android.content.pm.PackageManager
 import android.os.Bundle
 import android.util.Log
@@ -29,25 +30,30 @@ class MainActivity : ComponentActivity() {
     ) { isGranted ->
         if (isGranted) {
             Log.i("Permission", "Permission granted")
-
+            shouldShowCamera.value = true
         } else {
             Log.i("Permission", "Permission denied")
         }
     }
 
+    @androidx.camera.camera2.interop.ExperimentalCamera2Interop
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-
+        requestCameraPermission()
         setContent {
+            //log camera permission
+
             if (shouldShowCamera.value) {
+                Log.d("CameraT", "Camera permission granted")
                 //JetpackComposeTfObjectDetectionTheme {
-                    CameraPreview(
-                        executor = executor,
-                    )
+                CameraPreview(
+                    executor = executor,
+                    appContext = getApplicationContext(),
+                )
             }
         }
 
-        requestCameraPermission()
+
         cameraExecutor = Executors.newSingleThreadExecutor()
     }
 
@@ -66,7 +72,9 @@ class MainActivity : ComponentActivity() {
                 Manifest.permission.CAMERA
             ) -> Log.i("kilo", "Show camera permissions dialog")
 
-            else -> requestPermissionLauncher.launch(Manifest.permission.CAMERA)
+            else -> {
+                requestPermissionLauncher.launch(Manifest.permission.CAMERA)
+            }
         }
     }
 

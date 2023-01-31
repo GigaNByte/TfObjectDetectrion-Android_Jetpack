@@ -41,7 +41,12 @@ android {
     }
     packagingOptions {
         resources {
-            excludes += '/META-INF/{AL2.0,LGPL2.1}'
+            excludes += ['/META-INF/AL2.0', '/META-INF/LGPL2.1']
+            excludes += ['/license/LICENSE.dom-documentation.txt']//lets-plot
+            excludes += ['license/NOTICE'] //lets-plot
+            excludes += ['license/README.dom.txt'] //lets-plot
+            excludes += ['license/LICENSE.dom-software.txt'] //lets-plot
+            excludes += ['license/LICENSE'] //lets-plot
         }
     }
 }
@@ -84,7 +89,9 @@ dependencies {
     implementation 'org.tensorflow:tensorflow-lite-gpu:2.11.0'
     implementation 'org.tensorflow:tensorflow-lite-support:0.4.3'
 
-    //import kotlin stdlib
     implementation 'org.jetbrains.kotlin:kotlin-stdlib-jdk8'
+
+    implementation 'com.github.PhilJay:MPAndroidChart:v3.1.0'
+
 
 }

@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package com.giganbyte.jetpackcomposetfobjectdetection
+package com.giganbyte.jetpackcomposetfobjectdetection.utils.tf
 
 import android.content.Context
 import android.graphics.Bitmap
@@ -51,7 +51,8 @@ class YuvToRgbConverter(context: Context) {
         if (!::yuvBuffer.isInitialized) {
             pixelCount = image.cropRect.width() * image.cropRect.height()
             yuvBuffer = ByteBuffer.allocateDirect(
-                pixelCount * ImageFormat.getBitsPerPixel(ImageFormat.YUV_420_888) / 8)
+                pixelCount * ImageFormat.getBitsPerPixel(ImageFormat.YUV_420_888) / 8
+            )
         }
 
         // Get the YUV data in byte array form
